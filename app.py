@@ -1,91 +1,76 @@
 import streamlit as st
+import requests
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+import plotly.graph_objects as go
 from sklearn.preprocessing import MinMaxScaler
 
-# Load the data
-@st.cache
-def load_data(file_path):
-    return pd.read_csv(file_path)
+def fetch_data(api_url):
+    response = requests.get(api_url)
+    data = response.json()
 
-# LSTM model
-def lstm_model(data):
-    st.subheader("LSTM Model")
+    # Assuming the data structure contains a key 'data' which contains 'candles'
+    df = pd.DataFrame(data['data']['candles'], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'unknown_column'])
+    df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]  # Extract relevant columns
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')  # Convert timestamp to datetime
+    return df
 
-    # Assuming 'Close' is the column containing ^NSEI close prices
-    series = data['Close'].values.reshape(-1, 1)
+def normalize_data(df):
+    scaler = MinMaxScaler()
+    df[['open', 'high', 'low', 'close', 'volume']] = scaler.fit_transform(df[['open', 'high', 'low', 'close', 'volume']])
+    return df
 
-    # Normalize data
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled_data = scaler.fit_transform(series)
+def plot_combined_candlestick_chart(df_nifty, df_vix, timeframe):
+    fig = go.Figure()
 
-    # Create dataset
-    def create_dataset(dataset, time_steps=1):
-        X, y = [], []
-        for i in range(len(dataset) - time_steps):
-            a = dataset[i:(i + time_steps), 0]
-            X.append(a)
-            y.append(dataset[i + time_steps, 0])
-        return np.array(X), np.array(y)
+    # Normalize the data for proper comparison
+    df_nifty_normalized = normalize_data(df_nifty)
+    df_vix_normalized = normalize_data(df_vix)
 
-    time_steps = 5  # You can adjust the number of time steps
-    X, y = create_dataset(scaled_data, time_steps)
+    # Add Nifty 50 Candlestick
+    fig.add_trace(go.Candlestick(x=df_nifty['timestamp'],
+                                 open=df_nifty_normalized['open'],
+                                 high=df_nifty_normalized['high'],
+                                 low=df_nifty_normalized['low'],
+                                 close=df_nifty_normalized['close'],
+                                 name='Nifty 50'))
 
-    # Reshape input to be [samples, time steps, features]
-    X = np.reshape(X, (X.shape[0], 1, X.shape[1]))
+    # Add India VIX Candlestick with Blue for positive and Yellow for negative candles
+    fig.add_trace(go.Candlestick(x=df_vix['timestamp'],
+                                 open=df_vix_normalized['open'],
+                                 high=df_vix_normalized['high'],
+                                 low=df_vix_normalized['low'],
+                                 close=df_vix_normalized['close'],
+                                 name='India VIX',
+                                 increasing=dict(line=dict(color='blue')),
+                                 decreasing=dict(line=dict(color='yellow'))))
 
-    # Build LSTM model
-    model = Sequential()
-    model.add(LSTM(units=50, return_sequences=True, input_shape=(1, time_steps)))
-    model.add(LSTM(units=50))
-    model.add(Dense(units=1))
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(X, y, epochs=10, batch_size=1)
+    fig.update_layout(title=f'Nifty 50 vs India VIX Candlestick Comparison ({timeframe})',
+                      xaxis_title='Timestamp',
+                      yaxis_title='Normalized Price',
+                      xaxis_rangeslider_visible=False)
 
-    # Predict future values
-    test_inputs = scaled_data[-time_steps:].reshape(1, -1)
-    test_features = []
-    for i in range(time_steps, 0, -1):
-        test_features.append(test_inputs[:, i - time_steps:i])
-    test_features = np.array(test_features)
-    test_features = np.reshape(test_features, (test_features.shape[0], 1, test_features.shape[2]))
+    st.plotly_chart(fig)
 
-    predicted_scaled = model.predict(test_features)
-    predicted_values = scaler.inverse_transform(predicted_scaled.reshape(-1, 1))
-
-    # Display forecast
-    st.write("LSTM Forecast:")
-    st.line_chart(pd.DataFrame({'Predicted': predicted_values.flatten()}))
-
-# Streamlit UI
 def main():
-    st.title("Financial Market Prediction App")
-
-    # Upload ^INDIAVIX.csv file
-    vix_file = st.file_uploader("Choose ^INDIAVIX.csv file")
-    if vix_file is not None:
-        vix_data = load_data(vix_file)
-
-        # Upload ^NSEI.csv file
-        nsei_file = st.file_uploader("Choose ^NSEI.csv file")
-        if nsei_file is not None:
-            nsei_data = load_data(nsei_file)
-
-            # Merge the two datasets on the 'Date' column
-            merged_data = pd.merge(nsei_data, vix_data, on='Date', how='inner')
-
-            # Show data summary
-            st.write("Merged Data Summary:")
-            st.write(merged_data.head())
-
-            # Model selection
-            model_option = st.selectbox("Select Predictive Model", ["LSTM"])
-
-            if model_option == "LSTM":
-                lstm_model(merged_data)
+    st.title('Candlestick Chart Comparison')
+    
+    # Get user's choice for the timeframe
+    timeframe = st.radio("Select Timeframe:", ["1 min", "30 min", "Day"])
+    
+    if timeframe == "1 min":
+        api_url_nifty = "https://service.upstox.com/charts/v2/open/intraday/IN/NSE_INDEX|Nifty%2050/1minute/2024-01-25"
+        api_url_vix = "https://service.upstox.com/charts/v2/open/intraday/IN/NSE_INDEX|India%20VIX/1minute/2024-01-24"
+    elif timeframe == "30 min":
+        api_url_nifty = "https://service.upstox.com/charts/v2/open/intraday/IN/NSE_INDEX|Nifty%2050/30minute/2024-01-25"
+        api_url_vix = "https://service.upstox.com/charts/v2/open/historical/IN/NSE_INDEX|India%20VIX/30minute/2024-01-24"
+    else:
+        api_url_nifty = "https://service.upstox.com/charts/v2/open/historical/IN/NSE_INDEX|Nifty%2050/day/2024-01-25"
+        api_url_vix = "https://service.upstox.com/charts/v2/open/historical/IN/NSE_INDEX|India%20VIX/day/2024-01-25"
+    
+    # Fetch and plot data
+    df_nifty = fetch_data(api_url_nifty)
+    df_vix = fetch_data(api_url_vix)
+    plot_combined_candlestick_chart(df_nifty, df_vix, timeframe)
 
 if __name__ == "__main__":
     main()
