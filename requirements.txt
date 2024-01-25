@@ -8,3 +8,4 @@ streamlit
 arch
 tensorflow
 matplotlib
+plotly
