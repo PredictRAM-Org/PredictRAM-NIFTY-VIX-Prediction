@@ -7,3 +7,4 @@ lightgbm
 streamlit
 arch
 tensorflow
+matplotlib
