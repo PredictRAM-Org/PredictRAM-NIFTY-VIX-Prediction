@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from sklearn.preprocessing import MinMaxScaler
 import time
 
+@st.cache(ttl=60)  # Cache data fetching for 60 seconds
 def fetch_data(api_url):
     response = requests.get(api_url)
     data = response.json()
@@ -50,7 +51,7 @@ def plot_combined_candlestick_chart(df_nifty, df_vix, title):
                       yaxis_title='Normalized Price',
                       xaxis_rangeslider_visible=False)
 
-    st.plotly_chart(fig)
+    return fig
 
 def main():
     st.title('Live 1-Minute Candlestick Chart Comparison')
@@ -59,6 +60,7 @@ def main():
     api_url_vix = "https://service.upstox.com/charts/v2/open/intraday/IN/NSE_INDEX|India%20VIX/1minute/2024-01-25"
     
     refresh_button = st.button("Refresh Chart")
+    chart_placeholder = st.empty()
 
     while True:
         if refresh_button:
@@ -67,7 +69,10 @@ def main():
         # Fetch and plot data
         df_nifty = fetch_data(api_url_nifty)
         df_vix = fetch_data(api_url_vix)
-        plot_combined_candlestick_chart(df_nifty, df_vix, 'Live 1-Minute Candlestick Chart Comparison')
+        fig = plot_combined_candlestick_chart(df_nifty, df_vix, 'Live 1-Minute Candlestick Chart Comparison')
+
+        # Update the chart
+        chart_placeholder.plotly_chart(fig, use_container_width=True)
 
         # Pause for 1 minute before refreshing data
         time.sleep(60)
