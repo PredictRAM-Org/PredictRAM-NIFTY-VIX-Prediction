@@ -20,11 +20,12 @@ def normalize_data(df):
     df[['open', 'high', 'low', 'close', 'volume']] = scaler.fit_transform(df[['open', 'high', 'low', 'close', 'volume']])
     return df
 
-def plot_candlestick_chart(df_nifty, title):
+def plot_combined_candlestick_chart(df_nifty, df_vix, title):
     fig = go.Figure()
 
     # Normalize the data for proper comparison
     df_nifty_normalized = normalize_data(df_nifty)
+    df_vix_normalized = normalize_data(df_vix)
 
     # Add Nifty 50 Candlestick
     fig.add_trace(go.Candlestick(x=df_nifty['timestamp'],
@@ -34,6 +35,16 @@ def plot_candlestick_chart(df_nifty, title):
                                  close=df_nifty_normalized['close'],
                                  name='Nifty 50'))
 
+    # Add India VIX Candlestick
+    fig.add_trace(go.Candlestick(x=df_vix['timestamp'],
+                                 open=df_vix_normalized['open'],
+                                 high=df_vix_normalized['high'],
+                                 low=df_vix_normalized['low'],
+                                 close=df_vix_normalized['close'],
+                                 name='India VIX',
+                                 increasing=dict(line=dict(color='blue')),
+                                 decreasing=dict(line=dict(color='yellow'))))
+
     fig.update_layout(title=title,
                       xaxis_title='Timestamp',
                       yaxis_title='Normalized Price',
@@ -42,9 +53,10 @@ def plot_candlestick_chart(df_nifty, title):
     st.plotly_chart(fig)
 
 def main():
-    st.title('Live 1-Minute Candlestick Chart')
+    st.title('Live 1-Minute Candlestick Chart Comparison')
 
     api_url_nifty = "https://service.upstox.com/charts/v2/open/intraday/IN/NSE_INDEX|Nifty%2050/1minute/2024-01-25"
+    api_url_vix = "https://service.upstox.com/charts/v2/open/intraday/IN/NSE_INDEX|India%20VIX/1minute/2024-01-25"
     
     refresh_button = st.button("Refresh Chart")
 
@@ -54,7 +66,8 @@ def main():
 
         # Fetch and plot data
         df_nifty = fetch_data(api_url_nifty)
-        plot_candlestick_chart(df_nifty, 'Live 1-Minute Candlestick Chart')
+        df_vix = fetch_data(api_url_vix)
+        plot_combined_candlestick_chart(df_nifty, df_vix, 'Live 1-Minute Candlestick Chart Comparison')
 
         # Pause for 1 minute before refreshing data
         time.sleep(60)
